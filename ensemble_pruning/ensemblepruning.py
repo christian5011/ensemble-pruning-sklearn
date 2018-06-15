@@ -90,8 +90,8 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
 
     Attributes
     ----------
-    base_ensemble_ : estimator
-       The base ensemble estimator.
+    estimators_ : list of classifiers
+       The collection of fitted sub-estimators.
 
     n_estimators_ : int
        The total number of fitted sub-estimators.
@@ -101,9 +101,6 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
 
     n_classes_ : int
        The number of classes.
-
-    n_features_ : int
-       The number of features when ``fit`` is performed.
 
     criteria_ : string or object
        The name of the selected fit criteria, or the PruningState object.
@@ -123,17 +120,16 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
                  criteria="max_proba",
                  pruning_rate=None):
 
-        self.base_ensemble_ = base_ensemble
-        self.n_estimators_ = base_ensemble.n_estimators
+        self.estimators_ = base_ensemble.estimators_
+        self.n_estimators_ = len(self.estimators_)
 
         self.classes_ = base_ensemble.classes_
-        self.n_classes_ = base_ensemble.n_classes_
-        self.n_features_ = base_ensemble.n_features_
+        self.n_classes_ = len(self.classes_)
 
         self.criteria_ = criteria
         self.pruning_rate_ = pruning_rate
         self.ordered_idx_ = list(range(self.n_estimators_))
-        self.best_n_estimators_ = None  # Commented for fit check
+        # self.best_n_estimators_ = None  # Commented for fit check
 
     def _swap_index(self, i, j):
         """Swap two indexes from the ordered_idx_ attribute."""
@@ -165,7 +161,7 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
 
         pred_matrix = np.empty((n_estims, n_samples))
 
-        estimators_list = self.base_ensemble_.estimators_  # Get all estimators
+        estimators_list = self.estimators_  # Get all estimators
         for i in range(n_estims):
             pred_matrix[i] = estimators_list[self.ordered_idx_[i]].predict(X)  # Array (n_samples)
 
@@ -195,7 +191,7 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
 
         prob_matrix = np.empty((n_estims, n_samples, self.n_classes_))
 
-        estimators_list = self.base_ensemble_.estimators_  # Get all estimators
+        estimators_list = self.estimators_  # Get all estimators
         for i in range(n_estims):
             prob_matrix[i] = estimators_list[self.ordered_idx_[i]].predict_proba(X)  # Array (n_samples, n_classes)
 
@@ -219,6 +215,8 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
         """
         # Convert data
         X, y = check_X_y(X, y, accept_sparse=['csr', 'csc'])
+
+        self.n_features_ = X.shape[1]
 
         self.ordered_idx_ = list(range(self.n_estimators_))  # Init ordered idx list
 
@@ -256,7 +254,7 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
         Parameters
         ----------
         X : array-like, shape = [n_samples, n_features]
-            The training input samples.
+            The input samples.
 
         Returns
         -------
@@ -274,7 +272,7 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
         Parameters
         ----------
         X : array-like, shape = [n_samples, n_features]
-            The training input samples.
+            The input samples.
 
         n_estims : int, optional (default=None)
             The number of estimators used to predict.
@@ -298,7 +296,7 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
         Parameters
         ----------
         X : array-like, shape = [n_samples, n_features]
-            The training input samples.
+            The input samples.
 
         Returns
         -------
@@ -318,7 +316,7 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
         Parameters
         ----------
         X : array-like, shape = [n_samples, n_features]
-            The training input samples.
+            The input samples.
 
         n_estims : int, optional (default=None)
             The number of estimators used to predict.
@@ -357,7 +355,7 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
         Parameters
         ----------
         X : array-like, shape = [n_samples, n_features]
-            The training input samples.
+            The input samples.
 
         y : array-like, shape = [n_samples]
             The target class labels.
@@ -367,7 +365,6 @@ class EnsemblePruningClassifier(BaseEstimator, ClassifierMixin):
         errors : array of shape = [n_estimators]
             The prediction error for each number of used estimators.
         """
-        check_is_fitted(self, "best_n_estimators_")
         X, y = check_X_y(X, y, accept_sparse=['csr', 'csc'])
 
         errors = []
@@ -483,7 +480,7 @@ class PruningState(ABC):
         idx : int
             The idx of the new estimator.
 
-        score : double
+        score : float
             The partial score with the new estimator.
         """
         self.scores_.append(score)
@@ -516,13 +513,8 @@ class PruningState(ABC):
         best_n : int
             The number of estimators from the sub-ensemble.
         """
-        util_lst = []
 
-        for n, score in enumerate(self.scores_, start=1):
-            util = PruningState.utility(n, 1 - score)
-            util_lst.append(util)
-
-        best_n = util_lst.index(max(util_lst)) + 1
+        best_n = self.scores_.index(max(self.scores_)) + 1
 
         return best_n
 
@@ -605,27 +597,6 @@ class PruningState(ABC):
         y_pred = self.classes_.take((np.argmax(self.state_, axis=1)), axis=0)  # (n_samples)
 
         return y_pred
-
-    @staticmethod
-    def utility(n, err):
-        """Compute the utility given the number of estimators and the error.
-
-        Parameters
-        ----------
-        n : int
-            The number of estimators.
-
-        err : float
-            The prediction error the n estimators.
-
-        Returns
-        -------
-        util : float
-            The computed utility.
-        """
-        util = ((1 - err) + 0.001) / (((math.log(n) + 1) * err) + 1)
-
-        return util
 
 
 class PruningStateMaxVoted(PruningState):
