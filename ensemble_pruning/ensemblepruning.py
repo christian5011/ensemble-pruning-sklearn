@@ -13,7 +13,7 @@ from sklearn.base import ClassifierMixin, BaseEstimator
 from sklearn.utils import check_X_y
 from sklearn.utils.validation import check_is_fitted, check_array
 from sklearn.metrics import accuracy_score
-from sklearn.externals.joblib import Parallel, delayed
+from joblib import Parallel, delayed
 import multiprocessing
 
 from timeit import default_timer as timer
