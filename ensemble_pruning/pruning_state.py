@@ -104,7 +104,6 @@ class PruningState(ABC):
 
         return
 
-    @abstractmethod
     def update(self, idx, score):
         """Update the state with a new estimator.
 
@@ -116,8 +115,9 @@ class PruningState(ABC):
         score : float
             The partial score with the new estimator.
         """
+        if self.scores_ is None:
+            self.scores_ = []
         self.scores_.append(score)
-        return
 
     @abstractmethod
     def partial_score(self, idx):
@@ -146,9 +146,9 @@ class PruningState(ABC):
         best_n : int
             The number of estimators from the sub-ensemble.
         """
-
+        if not self.scores_:
+            return 0
         best_n = self.scores_.index(max(self.scores_)) + 1
-
         return best_n
 
     def pred_max_voted(self, idx, pred_matrix):
