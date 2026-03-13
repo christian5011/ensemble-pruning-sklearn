@@ -2,3 +2,4 @@
 *.pyc
 *ensemble_pruning.egg-info/
 *.png
+.venv/
