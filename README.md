@@ -1,272 +1,242 @@
-# Ensemble Pruning Classifier for scikit-learn
+# Ensemble Pruning for scikit-learn
 
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
-Ensemble Pruning Classifier is a scikit-learn compatible meta-estimator that optimizes ensemble models by selecting the most effective subset of base estimators. It intelligently prunes redundant or poorly performing estimators while maintaining or improving predictive performance.
+`ensemble_pruning` is a small scikit-learn compatible meta-estimator for pruning an already-fitted ensemble classifier down to a stronger or smaller subset of base estimators.
 
-## Why Ensemble Pruning?
+The project centers on `EnsemblePruningClassifier`, which:
 
-- 🚀 **Reduce inference time** by using fewer estimators
-- 💾 **Decrease memory footprint** of your ensemble models
-- 📈 **Improve generalization** by removing harmful estimators
-- 🔍 **Gain insights** into estimator contributions
-- 🤖 **Fully compatible** with scikit-learn's API
+- reorders base estimators by their contribution to the ensemble,
+- keeps either a fixed fraction or the empirically best prefix,
+- preserves a familiar `fit` / `predict` / `predict_proba` workflow.
+
+## What It Does
+
+Ensemble pruning can help when a fitted ensemble is larger than necessary. Instead of retraining a new model, this package evaluates the base estimators already present in the ensemble and keeps only the most useful ones for prediction.
+
+Typical goals include:
+
+- reducing inference cost,
+- shrinking memory usage,
+- removing weak or redundant estimators,
+- experimenting with different pruning criteria.
 
 ## Installation
 
-```bash
-# Install locally
-pip install -e .
+Install the package in editable mode for local development:
 
-# Or install dependencies
-pip install -r requirements.txt
+```bash
+pip install -e .
 ```
+
+Install the example and local development extras as well:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+If your environment uses `python3` rather than `python`, use the matching `pip3` / `python3` commands.
+
+To mirror the devcontainer setup locally with a virtual environment:
+
+```bash
+bash dev/setup_local_env.sh
+```
+
+By default the script creates `.venv/` in the repository root. You can pass a custom path if you prefer:
+
+```bash
+bash dev/setup_local_env.sh /path/to/venv
+```
+
+## Requirements and Compatibility
+
+Package requirements in `setup.py`:
+
+- `numpy>=1.15.0`
+- `scikit-learn>=0.20.0`
+
+The demo script also uses `matplotlib`, which is listed in `requirements-dev.txt`.
+
+`EnsemblePruningClassifier` expects a classifier ensemble that is already fitted and exposes:
+
+- `estimators_`
+- `classes_`
+- base estimators with `predict_proba`
+
+In practice, this package is best suited to fitted classifier ensembles whose members support class probabilities.
 
 ## Quick Start
 
 ```python
-from sklearn.ensemble import RandomForestClassifier
-from ensemble_pruning import EnsemblePruningClassifier
 from sklearn.datasets import load_iris
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
-# 1. Load and prepare data
-X, y = load_iris(return_X_y=True)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+from ensemble_pruning import EnsemblePruningClassifier
 
-# 2. Train a base ensemble
-base_ensemble = RandomForestClassifier(n_estimators=50, random_state=42)
+X, y = load_iris(return_X_y=True)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.3, random_state=42
+)
+
+base_ensemble = RandomForestClassifier(
+    n_estimators=50,
+    random_state=42,
+)
 base_ensemble.fit(X_train, y_train)
 
-# 3. Create and fit the pruning classifier
 pruner = EnsemblePruningClassifier(
     base_ensemble=base_ensemble,
-    criteria="uwa",          # Pruning criteria
-    pruning_rate=0.5         # Keep 50% of estimators
+    criteria="uwa",
+    pruning_rate=0.5,
 )
 pruner.fit(X_train, y_train)
 
-# 4. Use the pruned ensemble
-y_pred = pruner.predict(X_test)
-y_proba = pruner.predict_proba(X_test)
-
-# 5. Check results
-print(f"Original estimators: {pruner.n_estimators_}")
-print(f"Used estimators: {pruner.use_n_estimators_}")
+print("Total estimators:", pruner.n_estimators_)
+print("Estimators used:", pruner.use_n_estimators_)
+print("Accuracy:", pruner.score(X_test, y_test))
 ```
 
 ## Pruning Criteria
 
-Choose the strategy for selecting the best subset of estimators:
+The `criteria` argument accepts either a built-in strategy name or a custom `PruningState` instance.
 
-| Criteria | Default | Description | When to Use |
-|---------|---------|-------------|-------------|
-| `max_proba` | ✓ | Maximizes average class probability | General purpose, most reliable |
-| `max_voted` | | Maximizes majority vote accuracy | When probability calibration matters |
-| `complement` | | Prioritizes estimators that correct ensemble errors | For imbalanced datasets |
-| `uwa` | | Uses Uncertainty Weighted Accuracy metric | Complex decision boundaries |
-| Custom Object | | Implement your own `PruningState` subclass | Specialized requirements |
+Built-in options:
 
-## Advanced Features
+- `max_proba`: greedily maximizes predictive performance using averaged class probabilities.
+- `max_voted`: greedily maximizes majority-vote performance.
+- `complement`: favors estimators that correct mistakes made by the current sub-ensemble.
+- `uwa`: uses the Uncertainty Weighted Accuracy criterion.
 
-### Automatic Optimal Pruning
+## Automatic vs Fixed Pruning
 
-Automatically selects the optimal number of estimators without specifying `pruning_rate`:
+Use a fixed pruning rate when you already know how aggressively you want to reduce the ensemble:
 
 ```python
 pruner = EnsemblePruningClassifier(
     base_ensemble=base_ensemble,
-    criteria="uwa"
+    criteria="max_proba",
+    pruning_rate=0.5,
 )
-
-pruner.fit(X_train, y_train)
-print(f"Optimal estimators: {pruner.use_n_estimators_}")
 ```
 
-### Evaluate Pruning Performance
-
-Check error rates for different ensemble sizes and visualize the performance curve:
+Leave `pruning_rate=None` to let the estimator choose the best prefix length during `fit`:
 
 ```python
-from sklearn.metrics import accuracy_score
-import matplotlib.pyplot as plt
-
-# Check error rates for different ensemble sizes
-errors = pruner.check_error_performance(X_test, y_test)
-
-# Plot performance curve
-n_estimators = range(1, pruner.n_estimators_ + 1)
-plt.plot(n_estimators, errors, 'b-', linewidth=2)
-plt.axvline(x=pruner.use_n_estimators_, color='r', linestyle='--', 
-            label=f'Optimal: {pruner.use_n_estimators_} estimators')
-plt.xlabel('Number of Estimators')
-plt.ylabel('Error Rate')
-plt.title('Ensemble Pruning Performance Curve')
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.legend()
-plt.tight_layout()
-plt.savefig('pruning_curve.png', dpi=300)
+pruner = EnsemblePruningClassifier(
+    base_ensemble=base_ensemble,
+    criteria="max_proba",
+)
 ```
 
-### Predict with Custom Estimator Count
+After fitting:
 
-Predict using a specific number of estimators (useful for early stopping or analysis):
+- `n_estimators_` is the total size of the original ensemble.
+- `use_n_estimators_` is the number of estimators selected for prediction.
+- `ordered_idx_` is the ranked order of base estimator indices.
+
+## Prediction Helpers
+
+The estimator supports prediction with either the selected subset or a user-chosen prefix of the ranked ensemble:
 
 ```python
-# Predict using only 10 estimators
+y_pred = pruner.predict(X_test)
+y_proba = pruner.predict_proba(X_test)
+
 y_pred_10 = pruner.predict_n_estims(X_test, n_estims=10)
-
-# Get probabilities with 20 estimators
-y_proba_20 = pruner.predict_proba_n_estims(X_test, n_estims=20)
-
-# Accuracy comparison
-print(f"Using all {pruner.use_n_estimators_} estimators:")
-print(f"  Train: {accuracy_score(y_train, pruner.predict(X_train)):.4f}")
-print(f"  Test:  {accuracy_score(y_test, pruner.predict(X_test)):.4f}")
-
-print(f"\nUsing only 10 estimators:")
-print(f"  Train: {accuracy_score(y_train, pruner.predict_n_estims(X_train, n_estims=10)):.4f}")
-print(f"  Test:  {accuracy_score(y_test, pruner.predict_n_estims(X_test, n_estims=10)):.4f}")
+y_proba_10 = pruner.predict_proba_n_estims(X_test, n_estims=10)
 ```
 
-### Custom Pruning Strategy
+You can also inspect performance across prefix lengths:
 
-Implement your own pruning strategy by subclassing `PruningState`:
+```python
+errors = pruner.check_error_performance(X_test, y_test)
+```
+
+## Custom Pruning Strategies
+
+Custom strategies are implemented by subclassing `PruningState` and passing an instance through `criteria`.
 
 ```python
 import numpy as np
-from ensemble_pruning.pruning_state import PruningState
 
-class MyCustomStrategy(PruningState):
+from ensemble_pruning import EnsemblePruningClassifier, PruningState
+
+
+class MyStrategy(PruningState):
     def start(self, ensemble_pruning, X, y):
-        # Initialize state
+        super().start(ensemble_pruning, X, y)
         self.state_ = np.zeros((self.n_samples_, self.n_classes_))
-        # Add custom initialization here
-        return
-    
+
     def update(self, idx, score):
-        # Update state with new estimator
-        # Add custom update logic here
-        return
-    
+        super().update(idx, score)
+
     def partial_score(self, idx):
-        # Calculate score for candidate estimator
-        # Return your custom metric
-        return custom_score
+        return 0.0
+
 
 pruner = EnsemblePruningClassifier(
     base_ensemble=base_ensemble,
-    criteria=MyCustomStrategy()
+    criteria=MyStrategy(),
 )
 ```
 
-## Full Example with Performance Comparison
+See [ensemble_pruning/pruning_state.py](/home/christian/repos/ensemble-pruning-sklearn/ensemble_pruning/pruning_state.py) for the built-in strategy implementations.
 
-```python
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report
+## Example Script
 
-# Generate custom dataset
-X = np.random.randn(1000, 10)
-y = (np.random.randn(1000) > 0).astype(int)
+The repository includes a runnable demo:
 
-# Create base ensemble
-base_ensemble = RandomForestClassifier(
-    n_estimators=100,
-    max_depth=10,
-    random_state=42
-)
-
-# Train base ensemble
-base_ensemble.fit(X, y)
-base_train_acc = base_ensemble.score(X, y)
-base_test_acc = base_ensemble.score(X, y)
-# Using same data for demo
-
-# Apply ensemble pruning
-pruner = EnsemblePruningClassifier(
-    base_ensemble=base_ensemble,
-    criteria="uwa"
-)
-
-pruner.fit(X, y)
-pruned_train_acc = pruner.score(X, y)
-pruned_test_acc = pruner.score(X, y)
-
-print(f"Base ensemble:")
-print(f"  Accuracy: {base_train_acc:.4f}")
-print(f"  Estimators: {pruner.n_estimators_}")
-
-print(f"\nPruned ensemble:")
-print(f"  Accuracy: {pruned_train_acc:.4f}")
-print(f"  Estimators: {pruner.use_n_estimators_} ({(100 - pruner.use_n_estimators_ * 100 / pruner.n_estimators_):.0f}% reduction)")
-
-# Show classification report
-print("\nClassification Report:")
-print(classification_report(y, pruner.predict(X)))
+```bash
+python examples/ensemble_pruning_demo.py
 ```
 
-## How It Works
+If needed in your environment:
 
-1. **Initialization**: Takes a pre-trained ensemble with `estimators_` attribute
-2. **Reordering**: 
-   - Evaluates each estimator's contribution to the current sub-ensemble
-   - Sorts estimators by their individual contribution score
-3. **Pruning**:
-   - Selects top *k* estimators (where *k* = `n_estimators * pruning_rate`)
-   - If no pruning rate is specified, selects *k* that maximizes validation accuracy
-4. **Prediction**:
-   - Uses only the selected subset for final predictions
-   - Maintains scikit-learn's standard prediction interface
+```bash
+python3 examples/ensemble_pruning_demo.py
+```
 
-## API Reference
+The demo:
 
-### `EnsemblePruningClassifier` Parameters
+- runs on multiple built-in scikit-learn datasets,
+- compares the supported pruning criteria against the base ensemble,
+- prints a summary table for each dataset,
+- saves charts under `demo_outputs/`.
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `base_ensemble` | estimator object | required | Pre-trained ensemble with `estimators_` attribute |
-| `criteria` | str or PruningState | "max_proba" | Pruning strategy |
-| `pruning_rate` | float or None | None | Fraction of estimators to keep. If None, auto-selects optimal number |
+## Project Layout
 
-### Key Attributes After Fitting
+- [ensemble_pruning/ensemblepruning.py](/home/christian/repos/ensemble-pruning-sklearn/ensemble_pruning/ensemblepruning.py): `EnsemblePruningClassifier`
+- [ensemble_pruning/pruning_state.py](/home/christian/repos/ensemble-pruning-sklearn/ensemble_pruning/pruning_state.py): pruning strategy implementations
+- [ensemble_pruning/__init__.py](/home/christian/repos/ensemble-pruning-sklearn/ensemble_pruning/__init__.py): public exports and version
+- [examples/ensemble_pruning_demo.py](/home/christian/repos/ensemble-pruning-sklearn/examples/ensemble_pruning_demo.py): end-to-end example
+- [setup.py](/home/christian/repos/ensemble-pruning-sklearn/setup.py): package metadata
+- [dev/setup_local_env.sh](/home/christian/repos/ensemble-pruning-sklearn/dev/setup_local_env.sh): local virtual environment bootstrap script
+- [requirements-dev.txt](/home/christian/repos/ensemble-pruning-sklearn/requirements-dev.txt): local development and demo dependencies
 
-| Attribute | Description |
-|-----------|-------------|
-| `use_n_estimators_` | Number of estimators actually used for prediction |
-| `ordered_idx_` | Indices of base estimators sorted by contribution (best first) |
-| `n_estimators_` | Total number of base estimators |
-| `estimators_` | Reference to base ensemble's estimators |
+## Development Notes
 
-## Performance Considerations
+Build a source distribution and wheel with:
 
-- ✅ **Works with any scikit-learn ensemble** that has `estimators_` attribute
-- ✅ **Faster inference** proportional to pruning rate (50% pruning ≈ 2x speedup)
-- ✅ **No retraining required** - uses pre-trained models
-- ⚠️ **Requires pre-trained ensemble** - must provide trained `base_ensemble`
-- ⚠️ **Estimator count selection** - validate on separate set if using auto-selection
-- 📊 **Best practices** - Use validation set for determining optimal `pruning_rate`
+```bash
+python setup.py sdist bdist_wheel
+```
 
-## Supported Algorithms
+There is not yet a dedicated `tests/` directory in this repository. For now, a reasonable smoke-check is:
 
-Works with any scikit-learn classifier compatible with:
+```bash
+python -c "from ensemble_pruning import EnsemblePruningClassifier"
+python examples/ensemble_pruning_demo.py
+```
 
-- `RandomForestClassifier`
-- `GradientBoostingClassifier`
-- `ExtraTreesClassifier`
-- `VotingClassifier`
-- Any custom ensemble with `estimators_` and `predict`/`predict_proba` methods
+## Limitations
+
+- The base ensemble must already be fitted before you construct `EnsemblePruningClassifier`.
+- The current implementation is for classification workflows.
+- Probability-based criteria require base estimators that implement `predict_proba`.
+- Automatic pruning chooses the best prefix on the data passed to `fit`, so a separate validation split is still the safer option for model selection.
 
 ## License
 
-Distributed under the BSD 3-Clause License. See `LICENSE` for details.
-
-```text
-Copyright (c) 2018, Christian Messina Valverde.
-All rights reserved.
-```
-
----
-
-**Contributions welcome!** Please open issues for bug reports or feature requests, and submit pull requests for improvements.
+BSD 3-Clause.
