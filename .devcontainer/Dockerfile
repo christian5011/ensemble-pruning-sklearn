@@ -6,9 +6,9 @@ RUN apt-get update && \
 	vim && \
 	rm -rf /var/lib/apt/lists/*
 
-# Install Python packages
-COPY requirements.txt /tmp/
+# Install demo and development extras.
+COPY requirements-dev.txt /tmp/
 RUN pip install --upgrade pip && \
-	pip install -r /tmp/requirements.txt
+	pip install -r /tmp/requirements-dev.txt
 
 USER vscode

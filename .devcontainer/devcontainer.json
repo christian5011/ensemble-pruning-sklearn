@@ -3,7 +3,7 @@
 {
 	"name": "Ensemble Pruning Development",
 	"build": {
-		"dockerfile": "../dev/Dockerfile",
+		"dockerfile": "Dockerfile",
 		"context": ".."
 	},
 	"customizations": {

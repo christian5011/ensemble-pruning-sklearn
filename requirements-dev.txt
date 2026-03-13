@@ -1,0 +1,3 @@
+# Demo and local development extras.
+# Runtime dependencies are declared in setup.py.
+matplotlib
